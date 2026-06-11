@@ -1,0 +1,16 @@
+{
+  "name": "addressable-dependency-analyzer",
+  "displayName": "Addressable Dependency Analyzer",
+  "version": "0.0.1",
+  "unity": "2018.1",
+  "description": "Editor tools for analyzing Addressables build layout and remote dependencies.",
+  "keywords": [
+    "addressables",
+    "analyzer",
+    "editor"
+  ],
+  "category": "Addressables",
+  "dependencies": {
+    "com.unity.addressables": "2.9.1"
+  }
+}
