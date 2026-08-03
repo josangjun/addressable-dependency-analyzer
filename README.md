@@ -33,19 +33,19 @@ To install this tool via Git in your Unity project's `Packages/manifest.json`, a
 {
   "dependencies": {
     "com.unity.addressables": "2.9.1",
-    "addressable-dependency-analyzer": "https://github.com/josangjun/addressable-depedency-analyzer.git"
+    "addressable-dependency-analyzer": "https://github.com/josangjun/addressable-dependency-analyzer.git"
   }
 }
 ```
 
-> Replace `https://github.com/josangjun/addressable-depedency-analyzer.git` with the actual Git repository URL.
+> Replace `https://github.com/josangjun/addressable-dependency-analyzer.git` with the actual Git repository URL.
 
 To specify a branch or commit, use the following format:
 
 ```json
 {
   "dependencies": {
-    "addressable-dependency-analyzer": "https://github.com/josangjun/addressable-depedency-analyzer.git#main"
+    "addressable-dependency-analyzer": "https://github.com/josangjun/addressable-dependency-analyzer.git#main"
   }
 }
 ```
