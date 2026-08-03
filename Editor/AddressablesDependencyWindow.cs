@@ -1,11 +1,10 @@
+using System;
 using System.Collections.Generic;
-using System.Reflection;
 using UnityEditor;
 using UnityEditor.AddressableAssets;
 using UnityEditor.AddressableAssets.Build.Layout;
-using UnityEditor.AddressableAssets.GUI;
+using UnityEditor.AddressableAssets.Settings;
 using UnityEngine;
-using Object = UnityEngine.Object;
 
 namespace XSystem.Addressable.Analyzer
 {
@@ -14,6 +13,14 @@ namespace XSystem.Addressable.Analyzer
         private Vector2 dependencyScrollPosition; // dependency 표시용 스크롤 위치
         private AddressablesBuildLayoutAnalyzer buildLayoutAnalyzer;
         private bool isSelectAddress = true;
+        private readonly Dictionary<string, string[]> referenceHierarchyCache = new();
+
+        private sealed class DependencyFixCandidate
+        {
+            public string guid;
+            public string address;
+            public AddressableAssetGroup targetGroup;
+        }
 
         [MenuItem("Tools/Addressables/Dependency Analyzer")]
         public static void ShowWindow()
@@ -61,6 +68,11 @@ namespace XSystem.Addressable.Analyzer
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Local → Remote Dependency", EditorStyles.boldLabel);
+            if (GUILayout.Button("Fix All: Move Remote Dependencies to Local Groups", GUILayout.Height(24)))
+            {
+                FixAllRemoteDependencies();
+                return;
+            }
             
             dependencyScrollPosition = EditorGUILayout.BeginScrollView(dependencyScrollPosition, GUILayout.ExpandHeight(true));
             foreach (var dep in buildLayoutAnalyzer.RemoteDepGroups)
@@ -86,6 +98,11 @@ namespace XSystem.Addressable.Analyzer
                             PingAsset(remoteDep);
                         }
                         EditorGUILayout.EndHorizontal();
+
+                        foreach (var hierarchy in FindReferenceHierarchies(dep.Key, remoteDep))
+                        {
+                            EditorGUILayout.LabelField($"  ↳ {hierarchy}", EditorStyles.miniLabel);
+                        }
                     }
                 }
                 else
@@ -101,96 +118,235 @@ namespace XSystem.Addressable.Analyzer
 
             void PingAsset(BuildLayout.ExplicitAsset asset)
             {
-                var entry = AddressableAssetSettingsDefaultObject.Settings.FindAssetEntry(asset.Guid, true);
-                if (entry != null && isSelectAddress)
+                var assetPath = asset.AssetPath;
+                if (string.IsNullOrWhiteSpace(assetPath) && !string.IsNullOrWhiteSpace(asset.Guid))
                 {
-                    // Addressable Groups window에서 entry 선택
-                    var addressableGroupsWindowType = typeof(AnalyzeWindow).Assembly.GetType("UnityEditor.AddressableAssets.GUI.AddressableAssetsWindow");
-                    if (addressableGroupsWindowType != null)
-                    {
-                        var window = EditorWindow.GetWindow(addressableGroupsWindowType, false, "Addressable Groups", false);
-                        if (window != null)
-                        {
-                            window.Show();
-                            window.Focus();
-
-                            // TreeView에서 entry 선택을 위한 리플렉션
-                            var groupEditorField = addressableGroupsWindowType.GetField("m_GroupEditor", BindingFlags.NonPublic | BindingFlags.Instance);
-                            if (groupEditorField != null)
-                            {
-                                var groupEditor = groupEditorField.GetValue(window);
-                                if (groupEditor != null)
-                                {
-                                    // m_EntriesTreeView 필드를 통해 TreeView 인스턴스 접근
-                                    var treeViewField = groupEditor.GetType().GetField("m_EntriesTreeView", BindingFlags.NonPublic | BindingFlags.Instance);
-                                    if (treeViewField != null)
-                                    {
-                                        var treeView = treeViewField.GetValue(groupEditor);
-                                        if (treeView != null)
-                                        {
-                                            var setSelectionMethod = treeView.GetType().GetMethod("SetSelection", new[] { typeof(List<int>), typeof(bool) });
-                                            var findItemMethod = treeView.GetType().GetMethod("FindItem", new[] { typeof(string) });
-                                            var expandItemMethod = treeView.GetType().GetMethod("ExpandItem", new[] { typeof(int), typeof(bool) });
-                                            if (setSelectionMethod != null && findItemMethod != null && expandItemMethod != null)
-                                            {
-                                                // entry의 GUID로 TreeViewItem을 찾음
-                                                var treeViewItem = findItemMethod.Invoke(treeView, new object[] { entry.guid });
-                                                if (treeViewItem != null)
-                                                {
-                                                    var idProperty = treeViewItem.GetType().GetProperty("id");
-                                                    var parentProperty = treeViewItem.GetType().GetProperty("parent");
-                                                    if (idProperty != null && parentProperty != null)
-                                                    {
-                                                        int id = (int)idProperty.GetValue(treeViewItem);
-                                                        // 부모 chain을 따라가며 모두 expand
-                                                        var parent = parentProperty.GetValue(treeViewItem);
-                                                        var expandedIds = new HashSet<int>();
-                                                        while (parent != null)
-                                                        {
-                                                            var parentIdProp = parent.GetType().GetProperty("id");
-                                                            if (parentIdProp != null)
-                                                            {
-                                                                int parentId = (int)parentIdProp.GetValue(parent);
-                                                                if (!expandedIds.Contains(parentId))
-                                                                {
-                                                                    expandItemMethod.Invoke(treeView, new object[] { parentId, false });
-                                                                    expandedIds.Add(parentId);
-                                                                }
-                                                            }
-                                                            parent = parentProperty.GetValue(parent);
-                                                        }
-                                                        // entry 선택
-                                                        setSelectionMethod.Invoke(treeView, new object[] { new List<int> { id }, true });
-                                                        return;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    // fallback: SelectEntries 메서드 사용
-                                    var selectMethod = groupEditor.GetType().GetMethod("SelectEntries", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                                    if (selectMethod != null)
-                                    {
-                                        selectMethod.Invoke(groupEditor, new[] { new[] { entry } });
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    assetPath = AssetDatabase.GUIDToAssetPath(asset.Guid);
                 }
-                // Entry가 없는 경우 일반 Project 창에서 ping
-                var o = AssetDatabase.LoadAssetAtPath<Object>(asset.AssetPath);
+
+                var o = AssetDatabase.LoadMainAssetAtPath(assetPath);
                 if (o != null)
                 {
-                    EditorGUIUtility.PingObject(o);
                     Selection.activeObject = o;
+                    EditorUtility.FocusProjectWindow();
+                    EditorGUIUtility.PingObject(o);
                 }
                 else
                 {
-                    Debug.LogWarning($"Asset '{asset.AssetPath}' not found");
+                    Debug.LogWarning($"Asset '{assetPath}' not found");
                 }
             }
+        }
+
+        private void FixAllRemoteDependencies()
+        {
+            var settings = AddressableAssetSettingsDefaultObject.Settings;
+            if (settings == null || buildLayoutAnalyzer?.RemoteDepGroups == null)
+            {
+                return;
+            }
+
+            var candidates = new Dictionary<string, DependencyFixCandidate>();
+            var skippedCount = 0;
+            foreach (var dependencyGroup in buildLayoutAnalyzer.RemoteDepGroups)
+            {
+                var sourceEntry = settings.FindAssetEntry(dependencyGroup.Key.Guid, true);
+                var targetGroup = sourceEntry?.parentGroup;
+                if (targetGroup == null)
+                {
+                    skippedCount += dependencyGroup.Value.Count;
+                    continue;
+                }
+
+                foreach (var dependency in dependencyGroup.Value)
+                {
+                    if (string.IsNullOrWhiteSpace(dependency.Guid))
+                    {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    if (!candidates.ContainsKey(dependency.Guid))
+                    {
+                        candidates.Add(dependency.Guid, new DependencyFixCandidate
+                        {
+                            guid = dependency.Guid,
+                            address = dependency.AddressableName,
+                            targetGroup = targetGroup
+                        });
+                    }
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                EditorUtility.DisplayDialog(
+                    "Addressables Dependency Analyzer",
+                    "No dependencies can be moved automatically.",
+                    "OK");
+                return;
+            }
+
+            var confirmed = EditorUtility.DisplayDialog(
+                "Move Remote Dependencies to Local",
+                $"Move {candidates.Count} remote asset(s) to the Local group of the referencing Prefab?\n\n" +
+                "The asset GUID and Address will be preserved. Folder entries will be overridden by explicit Local entries.\n\n" +
+                (skippedCount > 0 ? $"Skipped references: {skippedCount}" : string.Empty),
+                "Move",
+                "Cancel");
+            if (!confirmed)
+            {
+                return;
+            }
+
+            var movedEntries = new List<AddressableAssetEntry>();
+            foreach (var candidate in candidates.Values)
+            {
+                var entry = settings.CreateOrMoveEntry(candidate.guid, candidate.targetGroup, false, false);
+                if (entry == null)
+                {
+                    skippedCount++;
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(candidate.address))
+                {
+                    entry.SetAddress(candidate.address, false);
+                }
+
+                movedEntries.Add(entry);
+            }
+
+            settings.SetDirty(AddressableAssetSettings.ModificationEvent.BatchModification, movedEntries, true, true);
+            AssetDatabase.SaveAssets();
+            referenceHierarchyCache.Clear();
+            buildLayoutAnalyzer = null;
+
+            EditorUtility.DisplayDialog(
+                "Addressables Dependency Analyzer",
+                $"Moved {movedEntries.Count} asset(s) to Local groups." +
+                (skippedCount > 0 ? $"\nSkipped: {skippedCount}" : string.Empty) +
+                "\n\nReload the build report to verify the result.",
+                "OK");
+        }
+
+        private string[] FindReferenceHierarchies(
+            BuildLayout.ExplicitAsset sourceAsset,
+            BuildLayout.ExplicitAsset dependencyAsset)
+        {
+            var sourcePath = ResolveAssetPath(sourceAsset);
+            var dependencyPath = ResolveAssetPath(dependencyAsset);
+            if (!sourcePath.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase) ||
+                (string.IsNullOrWhiteSpace(dependencyAsset.Guid) && string.IsNullOrWhiteSpace(dependencyPath)))
+            {
+                return Array.Empty<string>();
+            }
+
+            var cacheKey = $"{sourcePath}|{dependencyAsset.Guid}|{dependencyPath}";
+            if (referenceHierarchyCache.TryGetValue(cacheKey, out var cachedHierarchies))
+            {
+                return cachedHierarchies;
+            }
+
+            var hierarchies = new List<string>();
+            GameObject prefabRoot = null;
+            try
+            {
+                prefabRoot = PrefabUtility.LoadPrefabContents(sourcePath);
+                if (prefabRoot == null)
+                {
+                    return CacheReferenceHierarchies(cacheKey, hierarchies);
+                }
+
+                foreach (var component in prefabRoot.GetComponentsInChildren<Component>(true))
+                {
+                    if (component == null)
+                    {
+                        continue;
+                    }
+
+                    var serializedObject = new SerializedObject(component);
+                    var property = serializedObject.GetIterator();
+                    var enterChildren = true;
+                    while (property.Next(enterChildren))
+                    {
+                        enterChildren = false;
+                        if (property.propertyType != SerializedPropertyType.ObjectReference ||
+                            property.objectReferenceValue == null ||
+                            !IsReferencedAsset(property.objectReferenceValue, dependencyAsset, dependencyPath))
+                        {
+                            continue;
+                        }
+
+                        hierarchies.Add(
+                            $"{GetHierarchyPath(prefabRoot.transform, component.transform)} " +
+                            $"({component.GetType().Name}.{property.propertyPath})");
+                    }
+                }
+            }
+            finally
+            {
+                if (prefabRoot != null)
+                {
+                    PrefabUtility.UnloadPrefabContents(prefabRoot);
+                }
+            }
+
+            return CacheReferenceHierarchies(cacheKey, hierarchies);
+        }
+
+        private string[] CacheReferenceHierarchies(string cacheKey, List<string> hierarchies)
+        {
+            var result = hierarchies.ToArray();
+            referenceHierarchyCache[cacheKey] = result;
+            return result;
+        }
+
+        private static bool IsReferencedAsset(
+            UnityEngine.Object referencedObject,
+            BuildLayout.ExplicitAsset dependencyAsset,
+            string dependencyPath)
+        {
+            var referencedPath = AssetDatabase.GetAssetPath(referencedObject);
+            if (!string.IsNullOrWhiteSpace(dependencyPath) &&
+                string.Equals(referencedPath, dependencyPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return !string.IsNullOrWhiteSpace(dependencyAsset.Guid) &&
+                   string.Equals(AssetDatabase.AssetPathToGUID(referencedPath), dependencyAsset.Guid, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetHierarchyPath(Transform root, Transform target)
+        {
+            var names = new List<string>();
+            var current = target;
+            while (current != null)
+            {
+                names.Add(current.name);
+                if (current == root)
+                {
+                    break;
+                }
+
+                current = current.parent;
+            }
+
+            names.Reverse();
+            return string.Join("/", names);
+        }
+
+        private static string ResolveAssetPath(BuildLayout.ExplicitAsset asset)
+        {
+            if (!string.IsNullOrWhiteSpace(asset.AssetPath))
+            {
+                return asset.AssetPath;
+            }
+
+            return string.IsNullOrWhiteSpace(asset.Guid)
+                ? string.Empty
+                : AssetDatabase.GUIDToAssetPath(asset.Guid);
         }
     }
 }
