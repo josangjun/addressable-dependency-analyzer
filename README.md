@@ -1,33 +1,33 @@
 # Addressable Dependency Analyzer
 
-Unity Editor utility for analyzing Addressables build layout and identifying local-to-remote asset references.
+Addressables 빌드 레이아웃을 분석하고 로컬 에셋에서 원격 에셋으로 이어지는 참조를 찾는 Unity Editor 유틸리티입니다.
 
-## Overview
+## 개요
 
-This tool inspects the Addressables build layout and reports when assets in local build paths reference assets in remote build paths. It helps you understand remote dependency relationships in an Addressables project.
+이 도구는 Addressables 빌드 레이아웃을 검사하여 로컬 빌드 경로의 에셋이 원격 빌드 경로의 에셋을 참조하는 경우를 알려줍니다. Addressables 프로젝트에서 원격 의존성 관계를 파악하는 데 도움을 줍니다.
 
-## Features
+## 주요 기능
 
-- Parses `BuildLayout` data from an Addressables build layout file
-- Maps Addressables groups by GUID to distinguish local and remote groups
-- Collects references from local assets to remote assets
-- Exposes the dependency map through `RemoteDepGroups`
-- Outputs local-to-remote references via Unity Debug logs
+- Addressables 빌드 레이아웃 파일에서 `BuildLayout` 데이터를 파싱합니다.
+- GUID를 기준으로 Addressables 그룹을 매핑하여 로컬 그룹과 원격 그룹을 구분합니다.
+- 로컬 에셋에서 원격 에셋으로 연결되는 참조를 수집합니다.
+- `RemoteDepGroups`를 통해 의존성 맵을 제공합니다.
+- 로컬 에셋에서 원격 에셋으로 이어지는 참조를 Unity Debug 로그로 출력합니다.
 
-## Requirements
+## 요구 사항
 
-- Unity 2018.1 or later
-- `com.unity.addressables` package installed
+- Unity 2018.1 이상
+- `com.unity.addressables` 패키지 설치
 
-## Installation
+## 설치
 
-1. Copy the `Editor` folder from this repository into the root of your Unity project.
-2. Confirm that Addressables is installed and configured.
-3. Place the build layout `.json` or `.bin` file in a known path.
+1. 이 저장소의 `Editor` 폴더를 Unity 프로젝트 루트에 복사합니다.
+2. Addressables가 설치되고 설정되어 있는지 확인합니다.
+3. 빌드 레이아웃 `.json` 또는 `.bin` 파일을 확인할 수 있는 경로에 둡니다.
 
-## Unity Package Git Installation
+## Unity Package Git 설치
 
-To install this tool via Git in your Unity project's `Packages/manifest.json`, add the dependency like this:
+Unity 프로젝트의 `Packages/manifest.json`에 다음과 같이 의존성을 추가하면 Git을 통해 이 도구를 설치할 수 있습니다.
 
 ```json
 {
@@ -38,9 +38,9 @@ To install this tool via Git in your Unity project's `Packages/manifest.json`, a
 }
 ```
 
-> Replace `https://github.com/josangjun/addressable-dependency-analyzer.git` with the actual Git repository URL.
+> `https://github.com/josangjun/addressable-dependency-analyzer.git` 부분은 실제 Git 저장소 URL로 바꾸세요.
 
-To specify a branch or commit, use the following format:
+브랜치 또는 커밋을 지정하려면 다음 형식을 사용하세요.
 
 ```json
 {
@@ -50,30 +50,30 @@ To specify a branch or commit, use the following format:
 }
 ```
 
-## Usage
+## 사용법
 
-Use `AddressablesBuildLayoutAnalyzer` from editor code or a custom menu/window.
+Editor 코드 또는 별도로 만든 메뉴/윈도우에서 `AddressablesBuildLayoutAnalyzer`를 사용합니다.
 
-Example:
+예시:
 
 ```csharp
 var analyzer = new XSystem.Addressable.Analyzer.AddressablesBuildLayoutAnalyzer(buildLayoutPath);
 analyzer.PrintLocalToRemoteRefs();
 ```
 
-Access the dependency map:
+의존성 맵에 접근하려면 다음과 같이 작성합니다.
 
 ```csharp
 var remoteDeps = analyzer.RemoteDepGroups;
 ```
 
-## Project Structure
+## 프로젝트 구조
 
-- `Editor/AddressablesBuildLayoutAnalyzer.cs` - Main analyzer implementation
-- `Editor/AddressablesDependencyWindow.cs` - Editor window for dependency visualization
-- `Editor/AddressablesStaticRemoteDependencyReporter.cs` - Static reporting helper
-- `Editor/AddressGroup.cs` - Addressable group helper
+- `Editor/AddressablesBuildLayoutAnalyzer.cs` - 메인 분석기 구현
+- `Editor/AddressablesDependencyWindow.cs` - 의존성 시각화를 위한 Editor 윈도우
+- `Editor/AddressablesStaticRemoteDependencyReporter.cs` - 정적 보고서 생성 도우미
+- `Editor/AddressGroup.cs` - Addressable 그룹 도우미
 
-## Notes
+## 참고
 
-This repository is intended as an editor-only utility and should be placed under a Unity `Editor` folder.
+이 저장소는 Editor 전용 유틸리티이므로 Unity 프로젝트의 `Editor` 폴더 아래에 배치해야 합니다.
